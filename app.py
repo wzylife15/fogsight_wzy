@@ -27,8 +27,12 @@ API_KEY = credentials["API_KEY"]
 BASE_URL = credentials.get("BASE_URL", "")
 MODEL = credentials.get("MODEL", "gemini-2.5-pro")
 
-if API_KEY.startswith("sk-"):
-    # 为 OpenRouter 添加应用标识
+# 判断使用哪个 LLM：
+# 1. 如果 BASE_URL 包含 "volces.com"（火山引擎/方舟），使用 OpenAI 兼容客户端
+# 2. 如果 API_KEY 以 "sk-" 开头，使用 OpenAI 兼容客户端
+# 3. 否则使用 Google Gemini
+if "volces.com" in BASE_URL.lower() or API_KEY.startswith("sk-"):
+    # 为 OpenRouter 或其他兼容服务添加应用标识
     extra_headers = {}
     if "openrouter.ai" in BASE_URL.lower():
         extra_headers = {
@@ -128,12 +132,20 @@ html+css+js+svg，放进一个html里"""
         ]
 
         try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                stream=True,
-                temperature=0.8, 
-            )
+            # 构建请求参数
+            request_params = {
+                "model": model,
+                "messages": messages,
+                "stream": True,
+                "temperature": 0.8,
+            }
+            
+            # 方舟 API 特殊参数处理
+            if "volces.com" in BASE_URL.lower():
+                # 火山引擎方舟 API 支持的参数
+                request_params["top_p"] = 0.9
+            
+            response = await client.chat.completions.create(**request_params)
         except OpenAIError as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
