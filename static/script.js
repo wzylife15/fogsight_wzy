@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         inCodeBlock = true;
                         if (agentThinkingMessage) agentThinkingMessage.remove();
                         codeBlockElement = appendCodeBlock();
-                        const contentAfterMarker = token.substring(token.indexOf('```') + 3).replace(/^html\n/, '');
+                        const contentAfterMarker = token.substring(token.indexOf('```') + 3).replace(/^html\s*\n?/, '').replace(/^[^\n]*html[^\n]*\n?/, '');
                         updateCodeBlock(codeBlockElement, contentAfterMarker);
                     } else if (inCodeBlock) {
                         if (token.includes('```')) {
@@ -186,6 +186,108 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 }
+            }
+            
+            // 处理最后的缓冲区数据（确保不遗漏任何消息）
+            if (buffer.trim()) {
+                console.log('Processing remaining buffer:', buffer.substring(0, 100));
+                const lines = buffer.split('\n\n');
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    if (!line.startsWith('data: ')) continue;
+
+                    const jsonStr = line.substring(6).trim();
+                    
+                    if (jsonStr.includes('[DONE]')) {
+                        console.log('Streaming complete (from buffer)');
+                        
+                        // 如果还在代码块中，需要完成它
+                        if (inCodeBlock && codeBlockElement) {
+                            inCodeBlock = false;
+                            console.log('Code block closed by [DONE] signal');
+                        }
+                        
+                        conversationHistory.push({ role: 'assistant', content: accumulatedCode });
+
+                        if (!codeBlockElement) {
+                            console.warn('No code block element created. Full response:', accumulatedCode.substring(0, 200));
+                            throw new LLMParseError('LLM did not return a complete code block.');
+                        }
+
+                        if (!isHtmlContentValid(accumulatedCode)) {
+                            console.warn('Invalid HTML received:\n', accumulatedCode.substring(0, 200));
+                            throw new LLMParseError('Invalid HTML content received.');
+                        }
+
+                        markCodeAsComplete(codeBlockElement);
+
+                        try {
+                            if (accumulatedCode) {
+                                appendAnimationPlayer(accumulatedCode, topic);
+                            }
+                        } catch (err) {
+                            console.error('appendAnimationPlayer failed:', err);
+                            throw new LLMParseError('Animation rendering failed.');
+                        }
+                        scrollToBottom();
+                        return;
+                    }
+
+                    let data;
+                    try {
+                        data = JSON.parse(jsonStr);
+                    } catch (err) {
+                        console.error('Failed to parse JSON from buffer:', jsonStr);
+                        // 继续处理，不中断
+                        continue;
+                    }
+
+                    if (data.error) {
+                        throw new LLMParseError(data.error);
+                    }
+                    const token = data.token || '';
+
+                    if (!inCodeBlock && token.includes('```')) {
+                        inCodeBlock = true;
+                        if (agentThinkingMessage) agentThinkingMessage.remove();
+                        codeBlockElement = appendCodeBlock();
+                        const contentAfterMarker = token.substring(token.indexOf('```') + 3).replace(/^html\s*\n?/, '').replace(/^[^\n]*html[^\n]*\n?/, '');
+                        updateCodeBlock(codeBlockElement, contentAfterMarker);
+                    } else if (inCodeBlock) {
+                        if (token.includes('```')) {
+                            inCodeBlock = false;
+                            const contentBeforeMarker = token.substring(0, token.indexOf('```'));
+                            updateCodeBlock(codeBlockElement, contentBeforeMarker);
+                        } else {
+                            updateCodeBlock(codeBlockElement, token);
+                        }
+                    }
+                }
+            }
+            
+            // 如果流式传输完成但没有收到 [DONE] 信号，仍然尝试完成
+            if (inCodeBlock && codeBlockElement && accumulatedCode) {
+                console.log('Stream ended without [DONE] signal, completing anyway');
+                inCodeBlock = false;
+                conversationHistory.push({ role: 'assistant', content: accumulatedCode });
+
+                if (!isHtmlContentValid(accumulatedCode)) {
+                    console.warn('Invalid HTML received');
+                    throw new LLMParseError('Invalid HTML content received.');
+                }
+
+                markCodeAsComplete(codeBlockElement);
+
+                try {
+                    if (accumulatedCode) {
+                        appendAnimationPlayer(accumulatedCode, topic);
+                    }
+                } catch (err) {
+                    console.error('appendAnimationPlayer failed:', err);
+                    throw new LLMParseError('Animation rendering failed.');
+                }
+                scrollToBottom();
+                return;
             }
         } catch (error) {
             console.error("Streaming failed:", error);

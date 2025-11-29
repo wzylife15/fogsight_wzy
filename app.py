@@ -138,6 +138,7 @@ html+css+js+svg，放进一个html里"""
                 "messages": messages,
                 "stream": True,
                 "temperature": 0.8,
+                "max_tokens": 8192,  # 设置足够大的 token 限制，确保完整生成 HTML
             }
             
             # 方舟 API 特殊参数处理
@@ -157,6 +158,7 @@ html+css+js+svg，放进一个html里"""
                 yield f"data: {payload}\n\n"
                 await asyncio.sleep(0.001)
 
+    # 确保发送完成信号
     yield 'data: {"event":"[DONE]"}\n\n'
 
 # -----------------------------------------------------------------------
